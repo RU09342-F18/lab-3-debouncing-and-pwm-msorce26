@@ -1,0 +1,99 @@
+//Code composed from a combination of sources including TI and online Forums
+//Edited to the point where it doesn't look like any of the sources
+
+//Michael Sorce
+//Last Updated 10/5/18
+
+//Description: Software LED PWM - uses TimerA0 interrupt with multiple capture control registers to increase an LEDs brightness by 10% everytime the button is pressed
+//After 100% brightness the LED goes to 0% brightness and continues to increase by 10% per button press
+//Button debounced using timerA1
+
+//Includes msp430 header file
+#include <msp430g2553.h>
+
+
+int main(void) {
+    WDTCTL = WDTPW + WDTHOLD; //Stops Watchdog timer so infinite loops can run
+
+    P1DIR |= 0x41; //Set LED pin P1.0 and P1.6 to output
+    P1OUT |= 0x01; //Turns on LED P1.0
+
+
+    //Timer A0 Set Up
+        //Initialize Capture compare register values
+        TA0CCR0 = 500;
+        TA0CCR1 = 1000;
+        TA0CCR2 = 500;
+
+        TA0CCTL0 = CCIE; //enable Timer A0 capture compare interrupt
+        TA0CTL = TASSEL_2 + MC_1; //Timer A0 set up and start timer: uses SM clock(1MHz) and used in upmode
+
+    //Timer A1 set up
+        TA1CCR0 = 25000; //initialize capture compare register 0
+        TA1CCTL0 = CCIE; //enable TimerA1 capture compare interrupt
+
+    //Button interrupt set up
+        P1OUT =  BIT3;// P1.3 Button set, else reset
+        P1REN |= BIT3;// P1.3 Button pullup resistor enables
+        P1IE |= BIT3;// P1.3 Button interrupt enabled
+        P1IES |= BIT3;// Interrupt enable on Hi/lo action (Button depress)
+        P1IFG &= ~BIT3;// P1.3 IFG cleared (clears interrupt pending flag)
+
+
+
+
+    __bis_SR_register(LPM0_bits + GIE); //Switch to low power mode 0 and enable general interrupts
+}
+
+// Port 1 interrupt service routine (Interrupt when button is pressed)
+#pragma vector=PORT1_VECTOR
+__interrupt void Port_1(void)
+
+{
+    TA1CTL = TASSEL_2 + MC_1 + ID_3; //Starts Timer A1: uses SM clock (1MHz), in upmode, with /8 divider
+    P1IFG &= ~BIT3;// P1.3 IFG cleared (No Interrupt pending)
+
+}
+
+// Timer0_A0 interrupt service routine
+#pragma vector=TIMER0_A0_VECTOR
+__interrupt void Timerccr0 (void)
+{
+    //If TA0CCR2 == 0, the LED should be off, so it skips the LED toggle code
+    if(TA0CCR2 != 0)
+    {
+        if (TA0CCR0 != TA0CCR1) //if TA0CCR0 is not equal to the relative max value (represented by TA0CCR1 = 1000)
+        {
+            P1OUT &= ~0x01; //Turn off LED P1.0
+            TA0CCR0 = TA0CCR1; //TA0CCR0 = 1000 (max value)
+        }
+        else
+        {
+            P1OUT |= 0x01; //Turn LED P1.0 on
+            TA0CCR0 = TA0CCR2; //Resets TA0CCR0 to its previous value, being held by TA0CCR2
+        }
+    }
+    else
+    {
+        P1OUT &= ~0x01; //Turn LED P1.0 off
+    }
+
+}
+
+//TIMERA1 interrupt used for button de-bouncing
+// Timer0_A0 interrupt service routine
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer1_A0 (void)
+{
+        P1OUT ^= 0x40;// Toggle P1.6 LED: used to debug to make sure button interrupt and timer A1 interrupts are working
+        if(TA0CCR2 < 1000) // if TA0CCR2 is less than the max count value
+        {
+            TA0CCR2 = TA0CCR2 + 100; // increment TA0CCR2 by 10% of max
+        }
+        else
+        {
+            TA0CCR2 = 0; //Set TA0CCR2 to 0% of max
+        }
+        TA1CTL = MC_0;//timer stopped
+        TA1CTL = TACLR; //clears timer
+}
