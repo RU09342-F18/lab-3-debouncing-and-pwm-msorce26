@@ -68,10 +68,11 @@
 
 //Code by TI
 //Edited by Michael Sorce
+//Last updated 10/5/18
 //Edits allow code to run on G2ET
 //button switched from P1.4 to P1.3
 
-//Program toggles LED (P1.0) on button press (P1.3) using button interrupt and timer 200ms delay to debouce the button
+//Program toggles LED (P1.0) on button press (P1.3) using button interrupt and timer 150ms delay to debouce the button
 
 //Includes msp430 header file
 #include <msp430.h>
@@ -80,10 +81,12 @@ int main(void)
 {
   WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
 
+  //Timer A0 set up
   TA0CCTL0 = CCIE;                          // CCR0 interrupt enabled (interrupt used for timers) for TA0
   TA0CCR0 = 18750;                          // CCR0 set to 18750 to allow SMclk to provide a 150ms delay
   TA0CTL = TASSEL_2 + MC_1 + ID_3;          // SMCLK, upmode, /8 --- set up timer A0
 
+  //Button Interrupt set up
   P1DIR = 0x41;                             // Sets P1.0 to an output (makes LED pin an output)
   P1OUT =  0x08;                            // P1.3(Button to control LED) set, else reset
   P1REN |= 0x08;                            // Button P1.3 pull up resistor enabled
@@ -91,7 +94,7 @@ int main(void)
   P1IES |= 0x08;                            // Button P1.3 Hi/lo edge set
   P1IFG &= ~0x08;                           // Button P1.3 IFG cleared (No Interrupt Pending)
 
-  __bis_SR_register(LPM0_bits + GIE);       // Enter LPM0 w/ interrupt
+  __bis_SR_register(LPM0_bits + GIE);       // Enter LPM0 w/ general interrupts
 }
 
 // Port 1 interrupt service routine (Interrupt when button is pressed)
@@ -109,7 +112,7 @@ __interrupt void Port_1(void)
 #pragma vector=TIMER0_A0_VECTOR
 __interrupt void Timer_A0 (void)
 {
-          P1OUT ^= 0x01;// Toggle P1.0 (Green LED)
+          P1OUT ^= 0x01;// Toggle P1.0 LED
           TACTL = MC_0;//timer stopped
           TACTL = TACLR; //clears timer
 }
