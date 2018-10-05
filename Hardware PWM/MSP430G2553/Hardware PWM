@@ -1,22 +1,45 @@
+//Code composed from a combination of sources including TI and online Forums
+//Edited to the point where it doesn't look like any of the sources
+
+//Michael Sorce
+//Last Updated 10/5/18
+
+//Description: Hardware LED PWM - uses built in MSP430 hardware to produce a PWM signal to LED P1.6
+//P1.6 selected as PWM output, OUTMOD 7 (reset/set) selected to use CCR0 and CCR1 to create PWM
+//When timer reaches CCR1, the LED is turned off, when it reaches CCR0, the LED is turned back on
+//purpose is to increase an LEDs brightness by 10% every time the button is pressed
+//When button is pressed CCR1 is increased, shortening the time the LED is off, making it appear brighter
+//After 100% brightness the LED goes to 0% brightness and continues to increase by 10% per button press
+//Button de-bounced using timerA1
+
+
+//includes msp430 header file
 #include <msp430g2553.h>
 
 int main(void) {
-    WDTCTL = WDTPW + WDTHOLD; //Disable the Watchdog timer for our convenience.
-    P1DIR |= 0x41; //Set pin 1.6 and 1.0 to the output direction.
-    P1SEL |= 0x40; //Select pin 1.6 as our PWM output.
-    TA0CCR0 = 1000; //Set the period in the Timer A0 Capture/Compare 0 register to 1000 us.
-    TA0CCTL1 = OUTMOD_7; //toggle/
-    TA0CCR1 = 500; //The period in microseconds that the power is ON. It's half the time, which translates to a 50% duty cycle.
-    TA0CTL = TASSEL_2 + MC_1; //TASSEL_2 selects SMCLK as the clock source, and MC_1 tells it to count up to the value in TA0CCR0.
+    WDTCTL = WDTPW + WDTHOLD; //stops watchdog timer so we can use infinite loops
 
-      P1OUT =  BIT3;                            // P1.3 set, else reset
-      P1REN |= BIT3;                            // P1.3 pullup
-      P1IE |= BIT3;                             // P1.3 interrupt enabled
-      P1IES |= BIT3;                            // P1.3 Hi/lo edge
-      P1IFG &= ~BIT3;                           // P1.3 IFG cleared
+    //PWM and timer set up
+        P1DIR |= 0x41; //Set LED pins P1.0 and P1.6 to output
+        P1SEL |= 0x40; //Select pin 1.6 as PWM output
+        TA0CCR0 = 1000; //Set the high count value for timer 1 to 1000 clock cycles (1kHz)
+        TA0CCTL1 = OUTMOD_7; //reset/set PWM mode
+        TA0CCR1 = 500; //The period that the LED is on. Take the high count value divided by this to get the duty cycle (i.e. 1000/500 = 50% on, 50% off)
+        TA0CTL = TASSEL_2 + MC_1; //Timer A0 set up and start: Uses SM Clock, in upmode
+
+    //Button interrupt set up
+        P1OUT =  BIT3;// P1.3 Button set, else reset
+        P1REN |= BIT3;// P1.3 Button pullup resistor enabled
+        P1IE |= BIT3;// P1.3 Button interrupt enabled
+        P1IES |= BIT3;// P1.3 Button interrupt triggered on Hi/lo change (button depress)
+        P1IFG &= ~BIT3;// P1.3 Button IFG cleared (clear interrupt pending flag)
+
+     //Timer A1 set up
+             TA1CCR0 = 25000; //initialize capture compare register 0
+             TA1CCTL0 = CCIE; //enable TimerA1 capture compare interrupt
 
 
-    __bis_SR_register(LPM0_bits + GIE); //Switch to low power mode 0.
+    __bis_SR_register(LPM0_bits + GIE); //Switch to low power mode 0 and enable general interrupt
 }
 
 // Port 1 interrupt service routine (Interrupt when button is pressed)
@@ -24,15 +47,23 @@ int main(void) {
 __interrupt void Port_1(void)
 
 {
+    TA1CTL = TASSEL_2 + MC_1 + ID_3; //Starts Timer A1: uses SM clock (1MHz), in upmode, with /8 divider
+    P1IFG &= ~BIT3;// P1.3 IFG cleared (No Interrupt pending)
 
-    if(TA0CCR1 < 1000)
-    {
-        TA0CCR1 = TA0CCR1 + 100;
-    }
-    else
-    {
-        TA0CCR1 = 0;
-    }
-    P1IFG &= ~BIT3;                           // P1.3 IFG cleared (No Interrupt pending)
-
+}
+//TIMERA1 interrupt used for button de-bouncing
+// Timer0_A0 interrupt service routine
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer1_A0 (void)
+{
+        if(TA0CCR1 < 1000)//if TA0CCR1 is less than the relative maximum clock cycles
+        {
+            TA0CCR1 = TA0CCR1 + 100;//increment TA0CCR1 by 10% of the maximum
+        }
+        else
+        {
+            TA0CCR1 = 0;//set TA0CCR1 to 0% of the maximum
+        }
+        TA1CTL = MC_0;//timer stopped
+        TA1CTL = TACLR; //clears timer
 }
